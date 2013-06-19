@@ -23,7 +23,7 @@ public class ConnectTest extends Activity {
 	private BluetoothAdapter mBtAdapter;
 	private BluetoothSocket mBtSocket;
 	private OutputStream mOutStream;
-	private TextView mOut;
+	private TextView mTextView;
 
 	// Well known SPP UUID
 	private static final UUID MY_UUID = UUID.fromString("00001101-0000-1000-8000-00805F9B34FB");
@@ -36,16 +36,16 @@ public class ConnectTest extends Activity {
 		super.onCreate(savedInstanceState);
 		setContentView(R.layout.main);
 
-		mOut = (TextView) findViewById(R.id.out);
+		mTextView = (TextView) findViewById(R.id.out);
 
-		mOut.append("\n...In onCreate()...");
+		mTextView.append("\n...In onCreate()...");
 
 		mBtAdapter = BluetoothAdapter.getDefaultAdapter();
 		if (!thisThingIsOn()) {
 			Intent enableBtIntent = new Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE);
 			startActivityForResult(enableBtIntent, REQUEST_ENABLE_BT);
 		} else {
-			mOut.append("\n...In onResume...\n...Attempting client connect...");
+			mTextView.append("\n...In onResume...\n...Attempting client connect...");
 			
 			// Set up a pointer to the remote node using it's address.
 			BluetoothDevice device = mBtAdapter.getRemoteDevice(MAC_ADDRESS);
@@ -66,7 +66,7 @@ public class ConnectTest extends Activity {
 			// Establish the connection. This will block until it connects.
 			try {
 				mBtSocket.connect();
-				mOut.append("\n...Connection established and data link opened...");
+				mTextView.append("\n...Connection established and data link opened...");
 			} catch (IOException e) {
 				try {
 					mBtSocket.close();
@@ -76,9 +76,9 @@ public class ConnectTest extends Activity {
 			}
 
 			// Create a data stream so we can talk to server.
-			mOut.append("\n...Sending message to server...");
+			mTextView.append("\n...Sending message to server...");
 			String message = "Hello from Android.\n";
-			mOut.append("\n\n...The message that we will send to the server is: " + message);
+			mTextView.append("\n\n...The message that we will send to the server is: " + message);
 
 			try {
 				mOutStream = mBtSocket.getOutputStream();
@@ -105,7 +105,7 @@ public class ConnectTest extends Activity {
 				inStream = mBtSocket.getInputStream();
 				BufferedReader bReader = new BufferedReader(new InputStreamReader(inStream));
 				String lineRead = bReader.readLine();
-				mOut.append("\n..." + lineRead + "\n");
+				mTextView.append("\n..." + lineRead + "\n");
 				mOutStream.flush();
 				mOutStream.close();
 				mBtSocket.close();
@@ -122,7 +122,7 @@ public class ConnectTest extends Activity {
 			alertBox("Fatal Error", "Bluetooth Not supported. Aborting.");
 		} else {
 			if (mBtAdapter.isEnabled()) {
-				mOut.append("\n...Bluetooth is enabled...");
+				mTextView.append("\n...Bluetooth is enabled...");
 				return true;
 			}
 		}
