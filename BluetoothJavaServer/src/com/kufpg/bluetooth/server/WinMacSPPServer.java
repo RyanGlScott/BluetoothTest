@@ -15,7 +15,7 @@ import javax.microedition.io.Connector;
 import javax.microedition.io.StreamConnection;
 import javax.microedition.io.StreamConnectionNotifier;
 
-public class SimpleSPPServer {
+public class WinMacSPPServer {
 
 	// start server
 	private void startServer() throws IOException {
@@ -58,7 +58,7 @@ public class SimpleSPPServer {
 		System.out.println("Address: " + localDevice.getBluetoothAddress());
 		System.out.println("Name: " + localDevice.getFriendlyName());
 
-		SimpleSPPServer sampleSPPServer = new SimpleSPPServer();
+		WinMacSPPServer sampleSPPServer = new WinMacSPPServer();
 		sampleSPPServer.startServer();
 
 	}
