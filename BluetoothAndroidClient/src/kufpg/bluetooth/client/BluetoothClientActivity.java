@@ -30,7 +30,7 @@ public class BluetoothClientActivity extends Activity {
 
 	// SPP server's MAC address. MUST USE ALL CAPS (BECAUSE MAC ADDRESSES MUST BE SHOUTED)
 	public static final String MAC_ADDRESS = "EC:55:F9:F6:55:8E";
-
+	public static final String MESSAGE = "From Android with love";
 	private static final int REQUEST_ENABLE_BT = 8675309;
 	private TextView mLogTextView;
 	private StickyButton mStartButton;
@@ -49,7 +49,7 @@ public class BluetoothClientActivity extends Activity {
 			@Override
 			public void onClick(View v) {
 				setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_LOCKED);
-				ConnectThread thread = new ConnectThread();
+				BluetoothThread thread = new BluetoothThread(MESSAGE);
 				thread.start();
 			}
 		});
@@ -60,7 +60,7 @@ public class BluetoothClientActivity extends Activity {
 				mLogTextView.setText("");
 			}
 		});
-		
+
 		if (savedInstanceState != null) {
 			mLogTextView.setText(savedInstanceState.getString("log"));
 		}
@@ -72,7 +72,7 @@ public class BluetoothClientActivity extends Activity {
 		case REQUEST_ENABLE_BT:
 			if (resultCode == RESULT_OK) {
 				appendMessage("Bluetooth enabled! Restarting...");
-				ConnectThread thread = new ConnectThread();
+				BluetoothThread thread = new BluetoothThread(MESSAGE);
 				thread.start();
 			} else if (resultCode == RESULT_CANCELED) {
 				appendMessage("Bluetooth was not enabled. Connection cancelled.");
@@ -82,7 +82,7 @@ public class BluetoothClientActivity extends Activity {
 
 		super.onActivityResult(requestCode, resultCode, data);
 	}
-	
+
 	@Override
 	protected void onSaveInstanceState(Bundle outState) {
 		super.onSaveInstanceState(outState);
@@ -130,25 +130,31 @@ public class BluetoothClientActivity extends Activity {
 		});
 	}
 
-	private class ConnectThread extends Thread {
-		private final BluetoothAdapter mAdapter;
-		private BluetoothSocket mSocket;
+	private class BluetoothThread extends Thread {
+		private String mMessage;
 
-		public ConnectThread() {
+		public BluetoothThread(String message) {
+			mMessage = message;
+		}
+
+		@Override
+		public void run() {
 			final BluetoothManager manager = (BluetoothManager) getSystemService(Context.BLUETOOTH_SERVICE);
-			mAdapter = manager.getAdapter();
-			if (mAdapter == null) {
+			final BluetoothAdapter adapter = manager.getAdapter();
+			BluetoothSocket socket = null;
+
+			if (adapter == null) {
 				appendMessage("ERROR: Bluetooth is not supported on this device.");
-			} else if (!mAdapter.isEnabled()) {
+			} else if (!adapter.isEnabled()) {
 				//Ask user to enable Bluetooth
 				appendMessage("Bluetooth is not currently enabled. Attempting to enable...");
 				Intent enableBtIntent = new Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE);
 				startActivityForResult(enableBtIntent, REQUEST_ENABLE_BT);
 			} else {
 				appendMessage("Attempting socket creation...");
-				final BluetoothDevice device = mAdapter.getRemoteDevice(MAC_ADDRESS);
+				final BluetoothDevice device = adapter.getRemoteDevice(MAC_ADDRESS);
 				try {
-					mSocket = device.createRfcommSocketToServiceRecord(MY_UUID);
+					socket = device.createRfcommSocketToServiceRecord(MY_UUID);
 					appendMessage("Socket created! Attempting socket connection...");
 				} catch (IOException e) {
 					e.printStackTrace();
@@ -156,113 +162,90 @@ public class BluetoothClientActivity extends Activity {
 					unstickStartButton();
 				}
 			}
-		}
 
-		@Override
-		public void run() {
-			if (mSocket != null) {
-				mAdapter.cancelDiscovery();
+			adapter.cancelDiscovery();
+			try {
+				socket.connect();
+			} catch (IOException connectException) {
+				connectException.printStackTrace();
 				try {
-					mSocket.connect();
-				} catch (IOException connectException) {
 					connectException.printStackTrace();
-					try {
-						connectException.printStackTrace();
-						appendMessage("ERROR: Socket connection failed. Attempting to close socket...");
-						mSocket.close();
-						appendMessage("Socket closed.");
-					} catch (IOException closeException) {
-						closeException.printStackTrace();
-						appendMessage("ERROR: Socket closing failed.");
-					}
-					appendMessage("Ensure that the server is up and try again.");
-					unstickStartButton();
-					return;
+					appendMessage("ERROR: Socket connection failed. Attempting to close socket...");
+					socket.close();
+					appendMessage("Socket closed.");
+				} catch (IOException closeException) {
+					closeException.printStackTrace();
+					appendMessage("ERROR: Socket closing failed.");
 				}
-				appendMessage("Socket connection sucessful!");
-				DataExchangeThread thread = new DataExchangeThread("From Android with love", mSocket);
-				thread.start();
-			}
-		}
-	}
-
-	private class DataExchangeThread extends Thread {
-		private String mMessage;
-		private BluetoothSocket mSocket;
-
-		public DataExchangeThread(String message, BluetoothSocket socket) {
-			mMessage = message;
-			mSocket = socket;
-		}
-
-		@Override
-		public void run() {
-			if (mSocket != null) {
-				appendMessage("Attempting to send data to server. Creating output stream...");
-				OutputStream outStream = null;
-				byte[] messageBytes = (mMessage == null ? "\n".getBytes() : (mMessage + "\n").getBytes());
-				appendMessage("Output stream created! Sending message (" +
-						(mMessage == null ? "no message provided!" : mMessage) + ") to server...");
-				try {
-					outStream = mSocket.getOutputStream();
-				} catch (IOException e) {
-					e.printStackTrace();
-					appendMessage("ERROR: Output stream creation failed. Ensure that the server is up and try again.");
-					unstickStartButton();
-					return;
-				}
-
-				try {
-					outStream.write(messageBytes);
-				} catch (IOException e) {
-					e.printStackTrace();
-					if (MAC_ADDRESS.equals("00:00:00:00:00:00")) {
-						appendMessage("ERROR: Message sending failed. Change the MAC address from 00:00:00:00:00:00 to the server's MAC address.");
-					} else {
-						appendMessage("ERROR: Message sending failed. Ensure that the server is up and try again.");
-					}
-					unstickStartButton();
-					return;
-				}
-
-				appendMessage("Message sent! Preparing for server response...");
-				InputStream inStream = null;
-				try {
-					inStream = mSocket.getInputStream();
-				} catch (IOException e) {
-					e.printStackTrace();
-					appendMessage("ERROR: Input stream creation failed. Ensure that the server is up and try again.");
-					unstickStartButton();
-					return;
-				}
-				BufferedReader serverReader = new BufferedReader(new InputStreamReader(inStream));
-				String response = null;
-				try {
-					/**
-					 * WARNING! If the Android device is not connected to the server by this point,
-					 * calling readLine() will crash the app without throwing an exception!
-					 */
-					response = serverReader.readLine();
-				} catch (IOException e) {
-					e.printStackTrace();
-					appendMessage("ERROR: Failed to read server response. Ensure that the server is up and try again.");
-					unstickStartButton();
-					return;
-				}
-
-				appendMessage("Response from server: " + response);
-				try {
-					outStream.flush();
-					outStream.close();
-					inStream.close();
-					mSocket.close();
-				} catch (IOException e) {
-					e.printStackTrace();
-					appendMessage("ERROR: Closing something failed.");
-				}
-
+				appendMessage("Ensure that the server is up and try again.");
 				unstickStartButton();
+				return;
 			}
+
+			appendMessage("Attempting to send data to server. Creating output stream...");
+			OutputStream outStream = null;
+			byte[] messageBytes = (mMessage == null ? "\n".getBytes() : (mMessage + "\n").getBytes());
+			appendMessage("Output stream created! Sending message (" +
+					(mMessage == null ? "no message provided!" : mMessage) + ") to server...");
+			try {
+				outStream = socket.getOutputStream();
+			} catch (IOException e) {
+				e.printStackTrace();
+				appendMessage("ERROR: Output stream creation failed. Ensure that the server is up and try again.");
+				unstickStartButton();
+				return;
+			}
+
+			try {
+				outStream.write(messageBytes);
+			} catch (IOException e) {
+				e.printStackTrace();
+				if (MAC_ADDRESS.equals("00:00:00:00:00:00")) {
+					appendMessage("ERROR: Message sending failed. Change the MAC address from 00:00:00:00:00:00 to the server's MAC address.");
+				} else {
+					appendMessage("ERROR: Message sending failed. Ensure that the server is up and try again.");
+				}
+				unstickStartButton();
+				return;
+			}
+
+			appendMessage("Message sent! Preparing for server response...");
+			InputStream inStream = null;
+			try {
+				inStream = socket.getInputStream();
+			} catch (IOException e) {
+				e.printStackTrace();
+				appendMessage("ERROR: Input stream creation failed. Ensure that the server is up and try again.");
+				unstickStartButton();
+				return;
+			}
+			BufferedReader serverReader = new BufferedReader(new InputStreamReader(inStream));
+			String response = null;
+			try {
+				/**
+				 * WARNING! If the Android device is not connected to the server by this point,
+				 * calling readLine() will crash the app without throwing an exception!
+				 */
+				response = serverReader.readLine();
+			} catch (IOException e) {
+				e.printStackTrace();
+				appendMessage("ERROR: Failed to read server response. Ensure that the server is up and try again.");
+				unstickStartButton();
+				return;
+			}
+
+			appendMessage("Response from server: " + response);
+			try {
+				outStream.flush();
+				outStream.close();
+				inStream.close();
+				socket.close();
+			} catch (IOException e) {
+				e.printStackTrace();
+				appendMessage("ERROR: Closing something failed.");
+			}
+
+			unstickStartButton();
 		}
 	}
 }
