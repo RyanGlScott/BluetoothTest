@@ -8,15 +8,12 @@ import java.io.OutputStream;
 import java.util.UUID;
 
 import android.app.Activity;
-import android.app.AlertDialog;
 import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothDevice;
 import android.bluetooth.BluetoothManager;
 import android.bluetooth.BluetoothSocket;
 import android.content.Context;
-import android.content.DialogInterface;
 import android.content.Intent;
-import android.content.pm.ActivityInfo;
 import android.os.Bundle;
 import android.view.View;
 import android.view.View.OnClickListener;
@@ -31,7 +28,7 @@ public class BluetoothClientActivity extends Activity {
 	// SPP server's MAC address. MUST USE ALL CAPS (BECAUSE MAC ADDRESSES MUST BE SHOUTED)
 	public static final String MAC_ADDRESS = "EC:55:F9:F6:55:8E";
 	public static final String MESSAGE = "From Android with love";
-	private static final int REQUEST_ENABLE_BT = 8675309;
+	static final int REQUEST_ENABLE_BT = 8675309;
 	private TextView mLogTextView;
 	private StickyButton mStartButton;
 	private Button mClearTextButton;
@@ -48,9 +45,7 @@ public class BluetoothClientActivity extends Activity {
 		mStartButton.setOnClickListener(new OnClickListener() {
 			@Override
 			public void onClick(View v) {
-				setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_LOCKED);
-				BluetoothThread thread = new BluetoothThread(MESSAGE);
-				thread.start();
+				new BluetoothTask(BluetoothClientActivity.this).execute(MESSAGE);
 			}
 		});
 		mClearTextButton = (Button) findViewById(R.id.button_clear_text);
@@ -72,8 +67,7 @@ public class BluetoothClientActivity extends Activity {
 		case REQUEST_ENABLE_BT:
 			if (resultCode == RESULT_OK) {
 				appendMessage("Bluetooth enabled! Restarting...");
-				BluetoothThread thread = new BluetoothThread(MESSAGE);
-				thread.start();
+				new BluetoothTask(this).execute(MESSAGE);
 			} else if (resultCode == RESULT_CANCELED) {
 				appendMessage("Bluetooth was not enabled. Connection cancelled.");
 			}
@@ -83,83 +77,73 @@ public class BluetoothClientActivity extends Activity {
 		super.onActivityResult(requestCode, resultCode, data);
 	}
 
+	@SuppressWarnings("unchecked")
 	@Override
 	protected void onSaveInstanceState(Bundle outState) {
 		super.onSaveInstanceState(outState);
 		outState.putString("log", mLogTextView.getText().toString());
+		((NoGuavaBaseApplication<BluetoothClientActivity>) getApplication()).detachActivity(this);
 	}
 
-	public void alertBox(final String title, final String message) {
-		runOnUiThread(new Runnable() {
+	@SuppressWarnings("unchecked")
+	@Override
+	public void onResume() {
+		super.onResume();
+		((NoGuavaBaseApplication<BluetoothClientActivity>) getApplication()).attachActivity(this);
+	}
+
+	void appendMessage(final String newText) {
+		mLogTextView.append("\n" + newText);
+		mScrollView.post(new Runnable() {
 			@Override
 			public void run() {
-				new AlertDialog.Builder(BluetoothClientActivity.this).setTitle(title)
-				.setMessage(message + " Press OK to exit.")
-				.setPositiveButton("OK", new DialogInterface.OnClickListener() {
-					public void onClick(DialogInterface dialog, int which) {
-						finish();
-					}
-				}).show();
+				mScrollView.fullScroll(View.FOCUS_DOWN);
 			}
 		});
 	}
 
-	private void appendMessage(final String newText) {
-		runOnUiThread(new Runnable() {
-			@Override
-			public void run() {
-				mLogTextView.append("\n" + newText);
-				mScrollView.post(new Runnable() {
-					@Override
-					public void run() {
-						mScrollView.fullScroll(View.FOCUS_DOWN);
-					}
-				});
-			}
-		});
+	void unstickStartButton() {
+		appendMessage("");
+		mStartButton.unstick();
 	}
 
-	private void unstickStartButton() {
-		runOnUiThread(new Runnable() {
-			@Override
-			public void run() {
-				appendMessage("");
-				mStartButton.unstick();
-				setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED);
-			}
-		});
-	}
+	private class BluetoothTask extends AsyncActivityTask<BluetoothClientActivity, String, String, Void> {
+		BluetoothManager mManager;
 
-	private class BluetoothThread extends Thread {
-		private String mMessage;
-
-		public BluetoothThread(String message) {
-			mMessage = message;
+		public BluetoothTask(BluetoothClientActivity activity) {
+			super(activity);
+		}
+		
+		@Override
+		protected void onPreExecute() {
+			super.onPreExecute();
+			mManager = (BluetoothManager) getActivity().getSystemService(Context.BLUETOOTH_SERVICE);
 		}
 
 		@Override
-		public void run() {
-			final BluetoothManager manager = (BluetoothManager) getSystemService(Context.BLUETOOTH_SERVICE);
-			final BluetoothAdapter adapter = manager.getAdapter();
+		protected Void doInBackground(String... params) {
+			final BluetoothAdapter adapter = mManager.getAdapter();
 			BluetoothSocket socket = null;
 
 			if (adapter == null) {
-				appendMessage("ERROR: Bluetooth is not supported on this device.");
+				publishProgress("ERROR: Bluetooth is not supported on this device.");
+				return null;
 			} else if (!adapter.isEnabled()) {
 				//Ask user to enable Bluetooth
-				appendMessage("Bluetooth is not currently enabled. Attempting to enable...");
+				publishProgress("Bluetooth is not currently enabled. Attempting to enable...");
 				Intent enableBtIntent = new Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE);
-				startActivityForResult(enableBtIntent, REQUEST_ENABLE_BT);
+				getActivity().startActivityForResult(enableBtIntent, BluetoothClientActivity.REQUEST_ENABLE_BT);
+				return null;
 			} else {
-				appendMessage("Attempting socket creation...");
-				final BluetoothDevice device = adapter.getRemoteDevice(MAC_ADDRESS);
+				publishProgress("Attempting socket creation...");
+				final BluetoothDevice device = adapter.getRemoteDevice(BluetoothClientActivity.MAC_ADDRESS);
 				try {
-					socket = device.createRfcommSocketToServiceRecord(MY_UUID);
-					appendMessage("Socket created! Attempting socket connection...");
+					socket = device.createRfcommSocketToServiceRecord(BluetoothClientActivity.MY_UUID);
+					publishProgress("Socket created! Attempting socket connection...");
 				} catch (IOException e) {
 					e.printStackTrace();
-					appendMessage("ERROR: Socket creation failed.");
-					unstickStartButton();
+					publishProgress("ERROR: Socket creation failed.");
+					return null;
 				}
 			}
 
@@ -170,54 +154,51 @@ public class BluetoothClientActivity extends Activity {
 				connectException.printStackTrace();
 				try {
 					connectException.printStackTrace();
-					appendMessage("ERROR: Socket connection failed. Attempting to close socket...");
+					publishProgress("ERROR: Socket connection failed. Attempting to close socket...");
 					socket.close();
-					appendMessage("Socket closed.");
+					publishProgress("Socket closed.");
 				} catch (IOException closeException) {
 					closeException.printStackTrace();
-					appendMessage("ERROR: Socket closing failed.");
+					publishProgress("ERROR: Socket closing failed.");
 				}
-				appendMessage("Ensure that the server is up and try again.");
-				unstickStartButton();
-				return;
+				publishProgress("Ensure that the server is up and try again.");
+				return null;
 			}
 
-			appendMessage("Attempting to send data to server. Creating output stream...");
+			publishProgress("Attempting to send data to server. Creating output stream...");
 			OutputStream outStream = null;
-			byte[] messageBytes = (mMessage == null ? "\n".getBytes() : (mMessage + "\n").getBytes());
-			appendMessage("Output stream created! Sending message (" +
-					(mMessage == null ? "no message provided!" : mMessage) + ") to server...");
+			String message = params[0];
+			byte[] messageBytes = (message == null ? "\n".getBytes() : (message + "\n").getBytes());
+			publishProgress("Output stream created! Sending message (" +
+					(message == null ? "no message provided!" : message) + ") to server...");
 			try {
 				outStream = socket.getOutputStream();
 			} catch (IOException e) {
 				e.printStackTrace();
-				appendMessage("ERROR: Output stream creation failed. Ensure that the server is up and try again.");
-				unstickStartButton();
-				return;
+				publishProgress("ERROR: Output stream creation failed. Ensure that the server is up and try again.");
+				return null;
 			}
 
 			try {
 				outStream.write(messageBytes);
 			} catch (IOException e) {
 				e.printStackTrace();
-				if (MAC_ADDRESS.equals("00:00:00:00:00:00")) {
-					appendMessage("ERROR: Message sending failed. Change the MAC address from 00:00:00:00:00:00 to the server's MAC address.");
+				if (BluetoothClientActivity.MAC_ADDRESS.equals("00:00:00:00:00:00")) {
+					publishProgress("ERROR: Message sending failed. Change the MAC address from 00:00:00:00:00:00 to the server's MAC address.");
 				} else {
-					appendMessage("ERROR: Message sending failed. Ensure that the server is up and try again.");
+					publishProgress("ERROR: Message sending failed. Ensure that the server is up and try again.");
 				}
-				unstickStartButton();
-				return;
+				return null;
 			}
 
-			appendMessage("Message sent! Preparing for server response...");
+			publishProgress("Message sent! Preparing for server response...");
 			InputStream inStream = null;
 			try {
 				inStream = socket.getInputStream();
 			} catch (IOException e) {
 				e.printStackTrace();
-				appendMessage("ERROR: Input stream creation failed. Ensure that the server is up and try again.");
-				unstickStartButton();
-				return;
+				publishProgress("ERROR: Input stream creation failed. Ensure that the server is up and try again.");
+				return null;
 			}
 			BufferedReader serverReader = new BufferedReader(new InputStreamReader(inStream));
 			String response = null;
@@ -229,12 +210,11 @@ public class BluetoothClientActivity extends Activity {
 				response = serverReader.readLine();
 			} catch (IOException e) {
 				e.printStackTrace();
-				appendMessage("ERROR: Failed to read server response. Ensure that the server is up and try again.");
-				unstickStartButton();
-				return;
+				publishProgress("ERROR: Failed to read server response. Ensure that the server is up and try again.");
+				return null;
 			}
 
-			appendMessage("Response from server: " + response);
+			publishProgress("Response from server: " + response);
 			try {
 				outStream.flush();
 				outStream.close();
@@ -242,10 +222,28 @@ public class BluetoothClientActivity extends Activity {
 				socket.close();
 			} catch (IOException e) {
 				e.printStackTrace();
-				appendMessage("ERROR: Closing something failed.");
+				publishProgress("ERROR: Closing something failed.");
 			}
 
-			unstickStartButton();
+			return null;
 		}
+
+		@Override
+		protected void onProgressUpdate(String... progress) {
+			getActivity().appendMessage(progress[0]);
+		}
+		
+		@Override
+		protected void onCancelled() {
+			super.onCancelled();
+			getActivity().unstickStartButton();
+		}
+		
+		@Override
+		protected void onPostExecute(Void result) {
+			super.onPostExecute(result);
+			getActivity().unstickStartButton();
+		}
+
 	}
 }
