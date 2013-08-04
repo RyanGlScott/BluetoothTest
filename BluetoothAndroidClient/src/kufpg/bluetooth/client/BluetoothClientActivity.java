@@ -6,7 +6,7 @@ import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.util.UUID;
-
+import android.annotation.SuppressLint;
 import android.app.Activity;
 import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothDevice;
@@ -14,6 +14,7 @@ import android.bluetooth.BluetoothManager;
 import android.bluetooth.BluetoothSocket;
 import android.content.Context;
 import android.content.Intent;
+import android.os.Build;
 import android.os.Bundle;
 import android.view.View;
 import android.view.View.OnClickListener;
@@ -108,22 +109,25 @@ public class BluetoothClientActivity extends Activity {
 	}
 
 	private class BluetoothTask extends AsyncActivityTask<BluetoothClientActivity, String, String, Void> {
-		BluetoothManager mManager;
+		private BluetoothSocket mSocket;
+		private OutputStream mOutStream;
+		private InputStream mInStream;
 
 		public BluetoothTask(BluetoothClientActivity activity) {
 			super(activity);
 		}
-		
-		@Override
-		protected void onPreExecute() {
-			super.onPreExecute();
-			mManager = (BluetoothManager) getActivity().getSystemService(Context.BLUETOOTH_SERVICE);
-		}
 
+		@SuppressLint({ "NewApi", "InlinedApi" })
 		@Override
 		protected Void doInBackground(String... params) {
-			final BluetoothAdapter adapter = mManager.getAdapter();
-			BluetoothSocket socket = null;
+			BluetoothAdapter adapter;
+
+			if (Build.VERSION.SDK_INT < Build.VERSION_CODES.JELLY_BEAN_MR2) {
+				adapter = BluetoothAdapter.getDefaultAdapter();
+			} else {
+				final BluetoothManager manager = (BluetoothManager) getActivity().getSystemService(Context.BLUETOOTH_SERVICE);
+				adapter = manager.getAdapter();
+			}
 
 			if (adapter == null) {
 				publishProgress("ERROR: Bluetooth is not supported on this device.");
@@ -138,7 +142,7 @@ public class BluetoothClientActivity extends Activity {
 				publishProgress("Attempting socket creation...");
 				final BluetoothDevice device = adapter.getRemoteDevice(BluetoothClientActivity.MAC_ADDRESS);
 				try {
-					socket = device.createRfcommSocketToServiceRecord(BluetoothClientActivity.MY_UUID);
+					mSocket = device.createRfcommSocketToServiceRecord(BluetoothClientActivity.MY_UUID);
 					publishProgress("Socket created! Attempting socket connection...");
 				} catch (IOException e) {
 					e.printStackTrace();
@@ -149,13 +153,13 @@ public class BluetoothClientActivity extends Activity {
 
 			adapter.cancelDiscovery();
 			try {
-				socket.connect();
+				mSocket.connect();
 			} catch (IOException connectException) {
 				connectException.printStackTrace();
 				try {
 					connectException.printStackTrace();
 					publishProgress("ERROR: Socket connection failed. Attempting to close socket...");
-					socket.close();
+					mSocket.close();
 					publishProgress("Socket closed.");
 				} catch (IOException closeException) {
 					closeException.printStackTrace();
@@ -166,13 +170,12 @@ public class BluetoothClientActivity extends Activity {
 			}
 
 			publishProgress("Attempting to send data to server. Creating output stream...");
-			OutputStream outStream = null;
 			String message = params[0];
 			byte[] messageBytes = (message == null ? "\n".getBytes() : (message + "\n").getBytes());
 			publishProgress("Output stream created! Sending message (" +
 					(message == null ? "no message provided!" : message) + ") to server...");
 			try {
-				outStream = socket.getOutputStream();
+				mOutStream = mSocket.getOutputStream();
 			} catch (IOException e) {
 				e.printStackTrace();
 				publishProgress("ERROR: Output stream creation failed. Ensure that the server is up and try again.");
@@ -180,7 +183,7 @@ public class BluetoothClientActivity extends Activity {
 			}
 
 			try {
-				outStream.write(messageBytes);
+				mOutStream.write(messageBytes);
 			} catch (IOException e) {
 				e.printStackTrace();
 				if (BluetoothClientActivity.MAC_ADDRESS.equals("00:00:00:00:00:00")) {
@@ -192,15 +195,14 @@ public class BluetoothClientActivity extends Activity {
 			}
 
 			publishProgress("Message sent! Preparing for server response...");
-			InputStream inStream = null;
 			try {
-				inStream = socket.getInputStream();
+				mInStream = mSocket.getInputStream();
 			} catch (IOException e) {
 				e.printStackTrace();
 				publishProgress("ERROR: Input stream creation failed. Ensure that the server is up and try again.");
 				return null;
 			}
-			BufferedReader serverReader = new BufferedReader(new InputStreamReader(inStream));
+			BufferedReader serverReader = new BufferedReader(new InputStreamReader(mInStream));
 			String response = null;
 			try {
 				/**
@@ -215,16 +217,6 @@ public class BluetoothClientActivity extends Activity {
 			}
 
 			publishProgress("Response from server: " + response);
-			try {
-				outStream.flush();
-				outStream.close();
-				inStream.close();
-				socket.close();
-			} catch (IOException e) {
-				e.printStackTrace();
-				publishProgress("ERROR: Closing something failed.");
-			}
-
 			return null;
 		}
 
@@ -232,16 +224,37 @@ public class BluetoothClientActivity extends Activity {
 		protected void onProgressUpdate(String... progress) {
 			getActivity().appendMessage(progress[0]);
 		}
-		
+
 		@Override
 		protected void onCancelled() {
 			super.onCancelled();
-			getActivity().unstickStartButton();
+			end();
 		}
-		
+
 		@Override
 		protected void onPostExecute(Void result) {
 			super.onPostExecute(result);
+			end();
+		}
+
+		private void end() {
+			try {
+				if (mOutStream != null) {
+					mOutStream.flush();
+					mOutStream.close();
+				}
+
+				if (mInStream != null) {
+					mInStream.close();
+				}
+
+				if (mSocket != null) {
+					mSocket.close();
+				}
+			} catch (IOException e) {
+				e.printStackTrace();
+				publishProgress("ERROR: Closing something failed.");
+			}
 			getActivity().unstickStartButton();
 		}
 
