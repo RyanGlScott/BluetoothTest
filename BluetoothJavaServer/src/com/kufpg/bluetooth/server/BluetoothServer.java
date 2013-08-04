@@ -15,12 +15,13 @@ import javax.microedition.io.Connector;
 import javax.microedition.io.StreamConnection;
 import javax.microedition.io.StreamConnectionNotifier;
 
-public class WinMacSPPServer {
+public class BluetoothServer {
+	private static final String RESPONSE = "Greetings from serverland";
 
 	// start server
 	private void startServer() throws IOException {
 		// Create a UUID for SPP
-		UUID uuid = new UUID("1101", true);
+		UUID uuid = new UUID("0000110100001000800000805F9B34FB", false);
 		// Create the servicve url
 		String connectionString = "btspp://localhost:" + uuid + ";name=Sample SPP Server";
 
@@ -39,12 +40,13 @@ public class WinMacSPPServer {
 		InputStream inStream = connection.openInputStream();
 		BufferedReader bReader = new BufferedReader(new InputStreamReader(inStream));
 		String lineRead = bReader.readLine();
-		System.out.println(lineRead);
+		System.out.println("Message from mobile device: " + lineRead);
 
 		// send response to spp client
 		OutputStream outStream = connection.openOutputStream();
 		PrintWriter pWriter = new PrintWriter(new OutputStreamWriter(outStream));
-		pWriter.write("Response String from SPP Server\r\n");
+		System.out.println("Sending response (" + RESPONSE + ")");
+		pWriter.write(RESPONSE + "\r\n");
 		pWriter.flush();
 
 		pWriter.close();
@@ -58,8 +60,10 @@ public class WinMacSPPServer {
 		System.out.println("Address: " + localDevice.getBluetoothAddress());
 		System.out.println("Name: " + localDevice.getFriendlyName());
 
-		WinMacSPPServer sampleSPPServer = new WinMacSPPServer();
-		sampleSPPServer.startServer();
+		BluetoothServer sampleSPPServer = new BluetoothServer();
+		while (true) {
+			sampleSPPServer.startServer();
+		}
 
 	}
 }
