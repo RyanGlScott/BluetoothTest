@@ -154,18 +154,9 @@ public class BluetoothClientActivity extends Activity {
 			adapter.cancelDiscovery();
 			try {
 				mSocket.connect();
-			} catch (IOException connectException) {
-				connectException.printStackTrace();
-				try {
-					connectException.printStackTrace();
-					publishProgress("ERROR: Socket connection failed. Attempting to close socket...");
-					mSocket.close();
-					publishProgress("Socket closed.");
-				} catch (IOException closeException) {
-					closeException.printStackTrace();
-					publishProgress("ERROR: Socket closing failed.");
-				}
-				publishProgress("Ensure that the server is up and try again.");
+			} catch (IOException e) {
+				e.printStackTrace();
+				publishProgress("ERROR: Socket connection failed. Ensure that the server is up and try again.");
 				return null;
 			}
 
