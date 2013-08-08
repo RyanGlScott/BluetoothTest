@@ -1,4 +1,4 @@
-package kufpg.bluetooth.client;
+package edu.kufpg.bluetooth.client;
 
 import android.app.Activity;
 import android.os.AsyncTask;

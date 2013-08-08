@@ -1,4 +1,4 @@
-package kufpg.bluetooth.client;
+package edu.kufpg.bluetooth.client;
 
 import java.util.ArrayList;
 import java.util.HashMap;

@@ -4,7 +4,7 @@
     android:layout_height="fill_parent"
     android:orientation="vertical" >
 
-    <kufpg.bluetooth.client.StickyButton
+    <edu.kufpg.bluetooth.client.StickyButton
         android:id="@+id/button_start_server"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"

@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package kufpg.bluetooth.client;
+package edu.kufpg.bluetooth.client;
 
 import java.util.Set;
 

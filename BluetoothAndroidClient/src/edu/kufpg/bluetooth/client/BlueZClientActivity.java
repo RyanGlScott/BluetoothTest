@@ -1,4 +1,4 @@
-package kufpg.bluetooth.client;
+package edu.kufpg.bluetooth.client;
 
 import java.io.BufferedReader;
 import java.io.IOException;

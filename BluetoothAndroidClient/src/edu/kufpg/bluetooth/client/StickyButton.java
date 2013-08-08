@@ -1,4 +1,4 @@
-package kufpg.bluetooth.client;
+package edu.kufpg.bluetooth.client;
 
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.ReentrantLock;
