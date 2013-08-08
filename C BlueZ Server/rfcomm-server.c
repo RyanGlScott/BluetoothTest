@@ -7,7 +7,7 @@
 #include <bluetooth/rfcomm.h>
 
 /* To compile this, use the following Bash command:
- * gcc -I/usr/include/glib-2.0/ -I/usr/lib/glib-2.0/include -o rfcomm-server3 rfcomm-server3.c -lbluetooth
+ * gcc -I/usr/include/glib-2.0/ -I/usr/lib/glib-2.0/include -o rfcomm-server rfcomm-server.c -lbluetooth
  * 
  * Adapted from http://www.btessentials.com/examples/examples.html, under the following license:
  *
@@ -25,12 +25,29 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
 
+/* Allows this service to be discovered when running sdptool. For example, you can find this service
+ * after starting it by running
+ * 
+ * $ sdptool browse local
+ * 
+ * (Adapted from http://www.btessentials.com/examples/bluez/sdp-register.c)
+ * */
 sdp_session_t *register_service(uint8_t rfcomm_channel) {
-	// Adapted from http://www.btessentials.com/examples/bluez/sdp-register.c
-	uint32_t svc_uuid_int[] = {   0x01110000, 0x00100000, 0x80000080, 0xFB349B5F };
-	const char *service_name = "Roto-Rooter Data Router";
-	const char *svc_dsc = "An experimental plumbing router";
-	const char *service_prov = "Roto-Rooter";
+  
+	/* A 128-bit number used to identify this service. The words are ordered from most to least
+	 * significant, but within each word, the octets are ordered from least to most significant.
+	 * For example, the UUID represneted by this array is 00001101-0000-1000-8000-00805F9B34FB. (The
+	 * hyphenation is a convention specified by the Service Discovery Protocol of the Bluetooth Core
+	 * Specification, but is not particularly important for this program.)
+	 * 
+	 * This UUID is the Bluetooth Base UUID and is commonly used for simple Bluetooth applications.
+	 * Regardless of the UUID used, it must match the one that the Armatus Android app is searching
+	 * for.
+	 */
+	uint32_t svc_uuid_int[] = { 0x01110000, 0x00100000, 0x80000080, 0xFB349B5F };
+	const char *service_name = "Armatus Bluetooth server";
+	const char *svc_dsc = "A HERMIT server that interfaces with the Armatus Android app";
+	const char *service_prov = "Armatus";
 
 	uuid_t root_uuid, l2cap_uuid, rfcomm_uuid, svc_uuid,
 	       svc_class_uuid;
@@ -109,7 +126,6 @@ int main(int argc, char **argv) {
 	int port = 3;
 	sdp_session_t *session = register_service(port);
 
-
 	struct sockaddr_rc loc_addr = { 0 }, rem_addr = { 0 };
 	char buf[1024] = { 0 };
 	char str[1024] = { 0 };
@@ -119,7 +135,7 @@ int main(int argc, char **argv) {
 	s = socket(AF_BLUETOOTH, SOCK_STREAM, BTPROTO_RFCOMM);
 	printf("socket() returned %d\n", s);
 
-	// bind socket to port 1 of the first available
+	// bind socket to port 3 of the first available
 	// local bluetooth adapter
 	loc_addr.rc_family = AF_BLUETOOTH;
 	loc_addr.rc_bdaddr = *BDADDR_ANY;
@@ -150,7 +166,7 @@ int main(int argc, char **argv) {
 	}
 	
 	// send data to the client
-	sprintf(str, "Greetings from serverland.\n");
+	sprintf(str, "Greetings from serverland.");
 	bytes_sent = write(client, str, sizeof(str));
 	if (bytes_sent > 0) {
 	  printf("sent [%s]\n", str);
@@ -163,4 +179,3 @@ int main(int argc, char **argv) {
 
 	return 0;
 }
-

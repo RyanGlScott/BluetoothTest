@@ -23,18 +23,9 @@ import android.widget.Button;
 import android.widget.ScrollView;
 import android.widget.TextView;
 
-/**
- * Possibly useful SO posts:
- * http://stackoverflow.com/questions/3397071/service-discovery-failed-exception-using-bluetooth-on-android
- * http://stackoverflow.com/questions/3312914/setting-up-a-pc-bluetooth-server-for-android
- * http://stackoverflow.com/questions/10587967/android-not-discovering-bluez-service
- */
 public class BlueZClientActivity extends Activity {
 	// Well known SPP UUID
 	public static final UUID MY_UUID = UUID.fromString("00001101-0000-1000-8000-00805F9B34FB");
-
-	// SPP server's MAC address. MUST USE ALL CAPS (BECAUSE MAC ADDRESSES MUST BE SHOUTED)
-	public static final String MAC_ADDRESS = "EC:55:F9:F6:55:8E";
 	public static final String MESSAGE = "From Android with love";
 	public static final int REQUEST_ENABLE_BT = 8675309;
 	private static final int REQUEST_CONNECT_DEVICE = 1;
@@ -174,7 +165,7 @@ public class BlueZClientActivity extends Activity {
 				publishProgress("ERROR: Socket creation failed.");
 				return null;
 			}
-			
+
 			mAdapter.cancelDiscovery();
 			try {
 				mSocket.connect();
@@ -186,9 +177,11 @@ public class BlueZClientActivity extends Activity {
 
 			publishProgress("Attempting to send data to server. Creating output stream...");
 			String message = params[0];
-			byte[] messageBytes = (message == null ? "\n".getBytes() : (message + "\n").getBytes());
-			publishProgress("Output stream created! Sending message (" +
-					(message == null ? "no message provided!" : message) + ") to server...");
+			if (message == null) {
+				message = "No message provided!";
+			}
+			byte[] messageBytes = message.getBytes();
+			publishProgress("Output stream created! Sending message (" + message + ") to server...");
 			try {
 				mOutStream = mSocket.getOutputStream();
 			} catch (IOException e) {
@@ -201,11 +194,7 @@ public class BlueZClientActivity extends Activity {
 				mOutStream.write(messageBytes);
 			} catch (IOException e) {
 				e.printStackTrace();
-				if (BlueZClientActivity.MAC_ADDRESS.equals("00:00:00:00:00:00")) {
-					publishProgress("ERROR: Message sending failed. Change the MAC address from 00:00:00:00:00:00 to the server's MAC address.");
-				} else {
-					publishProgress("ERROR: Message sending failed. Ensure that the server is up and try again.");
-				}
+				publishProgress("ERROR: Message sending failed. Ensure that the server is up and try again.");
 				return null;
 			}
 
@@ -219,12 +208,14 @@ public class BlueZClientActivity extends Activity {
 			}
 			BufferedReader serverReader = new BufferedReader(new InputStreamReader(mInStream));
 			String response = null;
+			char[] buffer = new char[5000];
 			try {
 				/**
 				 * WARNING! If the Android device is not connected to the server by this point,
-				 * calling readLine() will crash the app without throwing an exception!
+				 * calling read() will crash the app without throwing an exception!
 				 */
-				response = serverReader.readLine();
+				serverReader.read(buffer);
+				response = new String(buffer);
 			} catch (IOException e) {
 				e.printStackTrace();
 				publishProgress("ERROR: Failed to read server response. Ensure that the server is up and try again.");
