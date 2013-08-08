@@ -34,6 +34,7 @@ public class BlueZClientActivity extends Activity {
 	private Button mClearTextButton;
 	private ScrollView mScrollView;
 	private BluetoothAdapter mAdapter;
+	private BluetoothDevice mDevice;
 
 	@SuppressLint({ "NewApi", "InlinedApi" })
 	@Override
@@ -47,10 +48,20 @@ public class BlueZClientActivity extends Activity {
 		mStartButton.setOnClickListener(new OnClickListener() {
 			@Override
 			public void onClick(View v) {
-				//new BluetoothTask(BlueZClientActivity.this).execute(MESSAGE);
-				if (isBluetoothEnabled()) {
-					Intent serverIntent = new Intent(BlueZClientActivity.this, DeviceListActivity.class);
-					startActivityForResult(serverIntent, REQUEST_CONNECT_DEVICE);
+				if (mAdapter == null) {
+					appendMessage("FATAL ERROR: Bluetooth is not supported on this device.");
+				} else if (!mAdapter.isEnabled()) {
+					//Ask user to enable Bluetooth
+					appendMessage("Bluetooth is not currently enabled. Attempting to enable...");
+					Intent enableBtIntent = new Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE);
+					startActivityForResult(enableBtIntent, REQUEST_ENABLE_BT);
+				} else {
+					if (mDevice == null) {
+						Intent serverIntent = new Intent(BlueZClientActivity.this, DeviceListActivity.class);
+						startActivityForResult(serverIntent, REQUEST_CONNECT_DEVICE);
+					} else {
+						new BluetoothRequestTask(BlueZClientActivity.this, mDevice).execute(MESSAGE);
+					}
 				}
 			}
 		});
@@ -69,17 +80,9 @@ public class BlueZClientActivity extends Activity {
 			mAdapter = manager.getAdapter();
 		}
 
-		if (mAdapter == null) {
-			appendMessage("FATAL ERROR: Bluetooth is not supported on this device.");
-		} else if (!mAdapter.isEnabled()) {
-			//Ask user to enable Bluetooth
-			appendMessage("Bluetooth is not currently enabled. Attempting to enable...");
-			Intent enableBtIntent = new Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE);
-			startActivityForResult(enableBtIntent, BlueZClientActivity.REQUEST_ENABLE_BT);
-		}
-
 		if (savedInstanceState != null) {
 			mLogTextView.setText(savedInstanceState.getString("log"));
+			mDevice = savedInstanceState.getParcelable("device");
 		}
 	}
 
@@ -92,6 +95,7 @@ public class BlueZClientActivity extends Activity {
 				//new BluetoothTask(this).execute(MESSAGE);
 			} else if (resultCode == RESULT_CANCELED) {
 				appendMessage("Bluetooth was not enabled. Connection cancelled.");
+				unstickStartButton();
 			}
 			break;
 		case REQUEST_CONNECT_DEVICE:
@@ -100,9 +104,9 @@ public class BlueZClientActivity extends Activity {
 				String address = data.getExtras()
 						.getString(DeviceListActivity.EXTRA_DEVICE_ADDRESS);
 				// Get the BluetoothDevice object
-				BluetoothDevice device = mAdapter.getRemoteDevice(address);
+				mDevice = mAdapter.getRemoteDevice(address);
 				// Attempt to connect to the device
-				new BluetoothTask(this, device).execute(MESSAGE);
+				new BluetoothRequestTask(this, mDevice).execute(MESSAGE);
 			}
 			break;
 		}
@@ -114,6 +118,7 @@ public class BlueZClientActivity extends Activity {
 	protected void onSaveInstanceState(Bundle outState) {
 		super.onSaveInstanceState(outState);
 		outState.putString("log", mLogTextView.getText().toString());
+		outState.putParcelable("device", mDevice);
 		((NoGuavaBaseApplication<BlueZClientActivity>) getApplication()).detachActivity(this);
 	}
 
@@ -134,28 +139,24 @@ public class BlueZClientActivity extends Activity {
 		});
 	}
 
-	boolean isBluetoothEnabled() {
-		return mAdapter != null;
-	}
-
 	void unstickStartButton() {
 		appendMessage("");
 		mStartButton.unstick();
 	}
 
-	private class BluetoothTask extends AsyncActivityTask<BlueZClientActivity, String, String, Void> {
+	private class BluetoothRequestTask extends AsyncActivityTask<BlueZClientActivity, String, String, String> {
 		private BluetoothDevice mDevice;
 		private BluetoothSocket mSocket;
 		private OutputStream mOutStream;
 		private InputStream mInStream;
 
-		public BluetoothTask(BlueZClientActivity activity, BluetoothDevice device) {
+		public BluetoothRequestTask(BlueZClientActivity activity, BluetoothDevice device) {
 			super(activity);
 			mDevice = device;
 		}
 
 		@Override
-		protected Void doInBackground(String... params) {
+		protected String doInBackground(String... params) {
 			publishProgress("Attempting socket creation...");
 			try {
 				mSocket = mDevice.createRfcommSocketToServiceRecord(BlueZClientActivity.MY_UUID);
@@ -222,8 +223,7 @@ public class BlueZClientActivity extends Activity {
 				return null;
 			}
 
-			publishProgress("Response from server: " + response);
-			return null;
+			return response;
 		}
 
 		@Override
@@ -238,8 +238,11 @@ public class BlueZClientActivity extends Activity {
 		}
 
 		@Override
-		protected void onPostExecute(Void result) {
+		protected void onPostExecute(String result) {
 			super.onPostExecute(result);
+			if (result != null) {
+				getActivity().appendMessage("Response from server: " + result);
+			}
 			end();
 		}
 
