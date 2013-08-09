@@ -6,6 +6,7 @@ import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.util.UUID;
+
 import android.annotation.SuppressLint;
 import android.app.Activity;
 import android.bluetooth.BluetoothAdapter;
@@ -25,16 +26,17 @@ import android.widget.TextView;
 public class BluetoothClientActivity extends Activity {
 	// Well known SPP UUID
 	public static final UUID MY_UUID = UUID.fromString("00001101-0000-1000-8000-00805F9B34FB");
-
-	// SPP server's MAC address. MUST USE ALL CAPS (BECAUSE MAC ADDRESSES MUST BE SHOUTED)
-	public static final String MAC_ADDRESS = "EC:55:F9:F6:55:8E";
 	public static final String MESSAGE = "From Android with love";
-	static final int REQUEST_ENABLE_BT = 8675309;
+	public static final int REQUEST_ENABLE_BT = 8675309;
+	private static final int REQUEST_CONNECT_DEVICE = 1;
 	private TextView mLogTextView;
 	private StickyButton mStartButton;
 	private Button mClearTextButton;
 	private ScrollView mScrollView;
+	private BluetoothAdapter mAdapter;
+	private BluetoothDevice mDevice;
 
+	@SuppressLint({ "NewApi", "InlinedApi" })
 	@Override
 	public void onCreate(Bundle savedInstanceState) {
 		super.onCreate(savedInstanceState);
@@ -46,7 +48,21 @@ public class BluetoothClientActivity extends Activity {
 		mStartButton.setOnClickListener(new OnClickListener() {
 			@Override
 			public void onClick(View v) {
-				new BluetoothTask(BluetoothClientActivity.this).execute(MESSAGE);
+				if (mAdapter == null) {
+					appendMessage("FATAL ERROR: Bluetooth is not supported on this device.");
+				} else if (!mAdapter.isEnabled()) {
+					//Ask user to enable Bluetooth
+					appendMessage("Bluetooth is not currently enabled. Attempting to enable...");
+					Intent enableBtIntent = new Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE);
+					startActivityForResult(enableBtIntent, REQUEST_ENABLE_BT);
+				} else {
+					if (mDevice == null) {
+						Intent serverIntent = new Intent(BluetoothClientActivity.this, DeviceListActivity.class);
+						startActivityForResult(serverIntent, REQUEST_CONNECT_DEVICE);
+					} else {
+						new BluetoothRequestTask(BluetoothClientActivity.this, mDevice).execute(MESSAGE);
+					}
+				}
 			}
 		});
 		mClearTextButton = (Button) findViewById(R.id.button_clear_text);
@@ -57,8 +73,16 @@ public class BluetoothClientActivity extends Activity {
 			}
 		});
 
+		if (Build.VERSION.SDK_INT < Build.VERSION_CODES.JELLY_BEAN_MR2) {
+			mAdapter = BluetoothAdapter.getDefaultAdapter();
+		} else {
+			final BluetoothManager manager = (BluetoothManager) getSystemService(Context.BLUETOOTH_SERVICE);
+			mAdapter = manager.getAdapter();
+		}
+
 		if (savedInstanceState != null) {
 			mLogTextView.setText(savedInstanceState.getString("log"));
+			mDevice = savedInstanceState.getParcelable("device");
 		}
 	}
 
@@ -67,14 +91,25 @@ public class BluetoothClientActivity extends Activity {
 		switch (requestCode) {
 		case REQUEST_ENABLE_BT:
 			if (resultCode == RESULT_OK) {
-				appendMessage("Bluetooth enabled! Restarting...");
-				new BluetoothTask(this).execute(MESSAGE);
+				appendMessage("Bluetooth enabled!");
+				//new BluetoothTask(this).execute(MESSAGE);
 			} else if (resultCode == RESULT_CANCELED) {
 				appendMessage("Bluetooth was not enabled. Connection cancelled.");
+				unstickStartButton();
+			}
+			break;
+		case REQUEST_CONNECT_DEVICE:
+			// When DeviceListActivity returns with a device to connect
+			if (resultCode == Activity.RESULT_OK) {
+				String address = data.getExtras()
+						.getString(DeviceListActivity.EXTRA_DEVICE_ADDRESS);
+				// Get the BluetoothDevice object
+				mDevice = mAdapter.getRemoteDevice(address);
+				// Attempt to connect to the device
+				new BluetoothRequestTask(this, mDevice).execute(MESSAGE);
 			}
 			break;
 		}
-
 		super.onActivityResult(requestCode, resultCode, data);
 	}
 
@@ -83,6 +118,7 @@ public class BluetoothClientActivity extends Activity {
 	protected void onSaveInstanceState(Bundle outState) {
 		super.onSaveInstanceState(outState);
 		outState.putString("log", mLogTextView.getText().toString());
+		outState.putParcelable("device", mDevice);
 		((NoGuavaBaseApplication<BluetoothClientActivity>) getApplication()).detachActivity(this);
 	}
 
@@ -108,50 +144,30 @@ public class BluetoothClientActivity extends Activity {
 		mStartButton.unstick();
 	}
 
-	private class BluetoothTask extends AsyncActivityTask<BluetoothClientActivity, String, String, Void> {
+	private class BluetoothRequestTask extends AsyncActivityTask<BluetoothClientActivity, String, String, String> {
+		private BluetoothDevice mDevice;
 		private BluetoothSocket mSocket;
 		private OutputStream mOutStream;
 		private InputStream mInStream;
 
-		public BluetoothTask(BluetoothClientActivity activity) {
+		public BluetoothRequestTask(BluetoothClientActivity activity, BluetoothDevice device) {
 			super(activity);
+			mDevice = device;
 		}
 
-		@SuppressLint({ "NewApi", "InlinedApi" })
 		@Override
-		protected Void doInBackground(String... params) {
-			BluetoothAdapter adapter;
-
-			if (Build.VERSION.SDK_INT < Build.VERSION_CODES.JELLY_BEAN_MR2) {
-				adapter = BluetoothAdapter.getDefaultAdapter();
-			} else {
-				final BluetoothManager manager = (BluetoothManager) getActivity().getSystemService(Context.BLUETOOTH_SERVICE);
-				adapter = manager.getAdapter();
+		protected String doInBackground(String... params) {
+			publishProgress("Attempting socket creation...");
+			try {
+				mSocket = mDevice.createRfcommSocketToServiceRecord(BluetoothClientActivity.MY_UUID);
+				publishProgress("Socket created! Attempting socket connection...");
+			} catch (IOException e) {
+				e.printStackTrace();
+				publishProgress("ERROR: Socket creation failed.");
+				return null;
 			}
 
-			if (adapter == null) {
-				publishProgress("ERROR: Bluetooth is not supported on this device.");
-				return null;
-			} else if (!adapter.isEnabled()) {
-				//Ask user to enable Bluetooth
-				publishProgress("Bluetooth is not currently enabled. Attempting to enable...");
-				Intent enableBtIntent = new Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE);
-				getActivity().startActivityForResult(enableBtIntent, BluetoothClientActivity.REQUEST_ENABLE_BT);
-				return null;
-			} else {
-				publishProgress("Attempting socket creation...");
-				final BluetoothDevice device = adapter.getRemoteDevice(BluetoothClientActivity.MAC_ADDRESS);
-				try {
-					mSocket = device.createRfcommSocketToServiceRecord(BluetoothClientActivity.MY_UUID);
-					publishProgress("Socket created! Attempting socket connection...");
-				} catch (IOException e) {
-					e.printStackTrace();
-					publishProgress("ERROR: Socket creation failed.");
-					return null;
-				}
-			}
-
-			adapter.cancelDiscovery();
+			mAdapter.cancelDiscovery();
 			try {
 				mSocket.connect();
 			} catch (IOException e) {
@@ -162,9 +178,11 @@ public class BluetoothClientActivity extends Activity {
 
 			publishProgress("Attempting to send data to server. Creating output stream...");
 			String message = params[0];
-			byte[] messageBytes = (message == null ? "\n".getBytes() : (message + "\n").getBytes());
-			publishProgress("Output stream created! Sending message (" +
-					(message == null ? "no message provided!" : message) + ") to server...");
+			if (message == null) {
+				message = "No message provided!";
+			}
+			byte[] messageBytes = message.getBytes();
+			publishProgress("Output stream created! Sending message (" + message + ") to server...");
 			try {
 				mOutStream = mSocket.getOutputStream();
 			} catch (IOException e) {
@@ -177,11 +195,7 @@ public class BluetoothClientActivity extends Activity {
 				mOutStream.write(messageBytes);
 			} catch (IOException e) {
 				e.printStackTrace();
-				if (BluetoothClientActivity.MAC_ADDRESS.equals("00:00:00:00:00:00")) {
-					publishProgress("ERROR: Message sending failed. Change the MAC address from 00:00:00:00:00:00 to the server's MAC address.");
-				} else {
-					publishProgress("ERROR: Message sending failed. Ensure that the server is up and try again.");
-				}
+				publishProgress("ERROR: Message sending failed. Ensure that the server is up and try again.");
 				return null;
 			}
 
@@ -195,20 +209,21 @@ public class BluetoothClientActivity extends Activity {
 			}
 			BufferedReader serverReader = new BufferedReader(new InputStreamReader(mInStream));
 			String response = null;
+			char[] buffer = new char[5000];
 			try {
 				/**
 				 * WARNING! If the Android device is not connected to the server by this point,
-				 * calling readLine() will crash the app without throwing an exception!
+				 * calling read() will crash the app without throwing an exception!
 				 */
-				response = serverReader.readLine();
+				serverReader.read(buffer);
+				response = new String(buffer);
 			} catch (IOException e) {
 				e.printStackTrace();
 				publishProgress("ERROR: Failed to read server response. Ensure that the server is up and try again.");
 				return null;
 			}
 
-			publishProgress("Response from server: " + response);
-			return null;
+			return response;
 		}
 
 		@Override
@@ -223,8 +238,11 @@ public class BluetoothClientActivity extends Activity {
 		}
 
 		@Override
-		protected void onPostExecute(Void result) {
+		protected void onPostExecute(String result) {
 			super.onPostExecute(result);
+			if (result != null) {
+				getActivity().appendMessage("Response from server: " + result);
+			}
 			end();
 		}
 
