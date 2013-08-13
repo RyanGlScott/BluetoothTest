@@ -5,9 +5,10 @@
 #include <bluetooth/sdp.h>
 #include <bluetooth/sdp_lib.h>
 #include <bluetooth/rfcomm.h>
+#include "Server_stub.h"
 
 /* To compile this, use the following Bash command:
-* gcc -I/usr/include/glib-2.0/ -I/usr/lib/glib-2.0/include -o rfcomm-server rfcomm-server.c -lbluetooth
+* gcc -I/usr/include/glib-2.0/ -I/usr/lib/glib-2.0/include -o server-with-haskell server-with-haskell.c -lbluetooth
 *
 * Adapted from http://www.btessentials.com/examples/examples.html, under the following license:
 *
@@ -122,7 +123,7 @@ sdp_session_t *register_service(uint8_t rfcomm_channel) {
 	return session;
 }
 
-int main(int argc, char **argv) {
+int main(int argc, char *argv[]) {
 	int port = 3, result, sock, client, bytes_read, bytes_sent;
 	struct sockaddr_rc loc_addr = { 0 }, rem_addr = { 0 };
 	char buffer[1024] = { 0 };
@@ -169,7 +170,9 @@ int main(int argc, char **argv) {
 		}
 
 		// send data to the client
-		sprintf(message, "Greetings from serverland.");
+		hs_init(&argc, &argv); // Prepare for Haskell
+		sprintf(message, appender("Greetings from serverland")); // appender is a Haskell function
+		hs_exit(); // We no longer need Haskell
 		bytes_sent = write(client, message, sizeof(message));
 		if (bytes_sent > 0) {
 			printf("sent [%s]\n", message);
