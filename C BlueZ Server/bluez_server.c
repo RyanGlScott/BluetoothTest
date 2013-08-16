@@ -5,7 +5,6 @@
 #include <bluetooth/sdp.h>
 #include <bluetooth/sdp_lib.h>
 #include <bluetooth/rfcomm.h>
-#include "Server_stub.h"
 
 /* To compile this, use the following Bash command:
 * gcc -I/usr/include/glib-2.0/ -I/usr/lib/glib-2.0/include -o server-with-haskell server-with-haskell.c -lbluetooth
@@ -123,11 +122,10 @@ sdp_session_t *register_service(uint8_t rfcomm_channel) {
 	return session;
 }
 
-int main(int argc, char *argv[]) {
+int init_server() {
 	int port = 3, result, sock, client, bytes_read, bytes_sent;
 	struct sockaddr_rc loc_addr = { 0 }, rem_addr = { 0 };
 	char buffer[1024] = { 0 };
-	char message[1024] = { 0 };
 	socklen_t opt = sizeof(rem_addr);
 
 	// local bluetooth adapter
@@ -135,54 +133,55 @@ int main(int argc, char *argv[]) {
 	loc_addr.rc_bdaddr = *BDADDR_ANY;
 	loc_addr.rc_channel = (uint8_t) port;
 
-	while (1) {
-		// register service
-		sdp_session_t *session = register_service(port);
+	// register service
+	sdp_session_t *session = register_service(port);
 
-		// allocate socket
-		sock = socket(AF_BLUETOOTH, SOCK_STREAM, BTPROTO_RFCOMM);
-		printf("socket() returned %d\n", sock);
+	// allocate socket
+	sock = socket(AF_BLUETOOTH, SOCK_STREAM, BTPROTO_RFCOMM);
+	printf("socket() returned %d\n", sock);
 
-		// bind socket to port 3 of the first available
-		result = bind(sock, (struct sockaddr *)&loc_addr, sizeof(loc_addr));
-		printf("bind() on channel %d returned %d\n", port, result);
+	// bind socket to port 3 of the first available
+	result = bind(sock, (struct sockaddr *)&loc_addr, sizeof(loc_addr));
+	printf("bind() on channel %d returned %d\n", port, result);
 
-		// put socket into listening mode
-		result = listen(sock, 1);
-		printf("listen() returned %d\n", result);
+	// put socket into listening mode
+	result = listen(sock, 1);
+	printf("listen() returned %d\n", result);
 
-		//sdpRegisterL2cap(port);
+	//sdpRegisterL2cap(port);
 
-		// accept one connection
-		printf("calling accept()\n");
-		client = accept(sock, (struct sockaddr *)&rem_addr, &opt);
-		printf("accept() returned %d\n", client);
+	// accept one connection
+	printf("calling accept()\n");
+	client = accept(sock, (struct sockaddr *)&rem_addr, &opt);
+	printf("accept() returned %d\n", client);
 
-		ba2str(&rem_addr.rc_bdaddr, buffer);
-		fprintf(stderr, "accepted connection from %s\n", buffer);
-		memset(buffer, 0, sizeof(buffer));
+	ba2str(&rem_addr.rc_bdaddr, buffer);
+	fprintf(stderr, "accepted connection from %s\n", buffer);
+	memset(buffer, 0, sizeof(buffer));
 
+	return client;
+}
 
-		// read data from the client
-		bytes_read = read(client, buffer, sizeof(buffer));
-		if (bytes_read > 0) {
-			printf("received [%s]\n", buffer);
-		}
-
-		// send data to the client
-		hs_init(&argc, &argv); // Prepare for Haskell
-		sprintf(message, appender("Greetings from serverland")); // appender is a Haskell function
-		hs_exit(); // We no longer need Haskell
-		bytes_sent = write(client, message, sizeof(message));
-		if (bytes_sent > 0) {
-			printf("sent [%s]\n", message);
-		}
-
-		// close connection
-		close(client);
-		close(sock);
-		sdp_close(session);
+char *read_server(int client) {
+	// read data from the client
+	char input[1024] = { 0 };
+	int bytes_read;
+	bytes_read = read(client, input, sizeof(input));
+	if (bytes_read > 0) {
+		printf("received [%s]\n", input);
+		return input;
+	} else {
+		return "";
 	}
+}
 
-	return 0;
+void write_server(int client, char *message) {
+	// send data to the client
+	char messageArr[1024] = { 0 };
+	int bytes_sent;
+	sprintf(messageArr, message);
+	bytes_sent = write(client, messageArr, sizeof(messageArr));
+	if (bytes_sent > 0) {
+		printf("sent [%s]\n", messageArr);
+	}
 }
